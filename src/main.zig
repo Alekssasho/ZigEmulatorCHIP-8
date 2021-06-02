@@ -3,7 +3,20 @@ const sdl = @cImport({
     @cInclude("SDL.h");
 });
 
-const OpCode = u16;
+const OpCodeName = enum {
+    SetIndex,
+    SetRegister,
+    Nop,
+    Count
+};
+
+const OpCode = union(OpCodeName) {
+    SetIndex: u16,
+    SetRegister: struct { register_name: u8, value: u8 },
+    Nop: void,
+    Count: void,
+};
+
 const Register = u8;
 
 const Emulator = struct {
@@ -51,17 +64,49 @@ const Emulator = struct {
         }
     }
 
-    pub fn emulate_cycle(self: *Emulator) void {
-        // Fetch
-        const opcode: OpCode = @intCast(OpCode, self.memory[self.program_counter]) << 8 | @intCast(OpCode, self.memory[self.program_counter + 1]);
-        // TODO: make union/enum for decoded opcode
-        switch (opcode & 0xF000) {
-            0xA000 => { // ANNN: Sets I to the address NNN
-                self.index_register = opcode & 0x0FFF;
-            },
-            else => {},
+    fn fetch_opcode(self: *Emulator) ?OpCode {
+        if (self.program_counter + 2 >= 4096) {
+            return null;
         }
-        //self.program_counter += 2;
+        // Fetch
+        const opcode: u16 = @intCast(u16, self.memory[self.program_counter]) << 8 | @intCast(u16, self.memory[self.program_counter + 1]);
+
+        self.program_counter += 2;
+        // Decode
+        switch (opcode & 0xF000) {
+            0xA000 => return OpCode{ .SetIndex = opcode & 0x0FFF },
+            0x6000 => return OpCode{ .SetRegister = .{
+                .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
+                .value = @intCast(u8, opcode & 0x00FF)
+            }},
+            else => std.debug.warn("Unknown opcode = {x}\n", .{opcode}),
+        }
+        return null;
+    }
+
+    fn execute_opcode(self: *Emulator, opcode: OpCode) void {
+        switch(opcode) {
+            OpCodeName.SetIndex => |value| self.index_register = value,
+            OpCodeName.SetRegister => |value| self.registers[value.register_name] = value.value,
+            OpCodeName.Nop => {},
+            OpCodeName.Count => unreachable,
+        }
+    }
+
+    pub fn emulate_cycle(self: *Emulator) void {
+        const opcode = self.fetch_opcode() orelse OpCode{ .Nop = {} };
+        self.execute_opcode(opcode);
+
+        if (self.delay_timer > 0) {
+            self.delay_timer -= 1;
+        }
+
+        if (self.sound_timer > 0) {
+            if (self.sound_timer == 1) {
+                std.log.info("BEEP!", .{});
+            }
+            self.sound_timer -= 1;
+        }
     }
 };
 
