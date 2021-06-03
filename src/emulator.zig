@@ -16,9 +16,10 @@ pub const Emulator = struct {
     stack: [16]u16,
     stack_pointer: u16,
     keys: [16]bool,
+    draw_flag: bool,
 
     pub fn initialize() Emulator {
-        return Emulator {
+        var result = Emulator {
             .memory = [_]u8{0} ** 4096,
             .registers = [_]Register{0} ** 16,
             .index_register = 0,
@@ -29,7 +30,16 @@ pub const Emulator = struct {
             .stack = [_]u16{0} ** 16,
             .stack_pointer = 0,
             .keys = [_]bool{false} ** 16,
+            .draw_flag = false,
         };
+
+        // Load the fontset
+        comptime std.debug.assert(chip8_fontset.len == 80);
+        for (chip8_fontset) |value, i| {
+            result.memory[i] = value;
+        }
+
+        return result;
     }
 
     pub fn load_program(self: *Emulator, filename: []const u8, allocator: *std.mem.Allocator) !void {
@@ -63,6 +73,11 @@ pub const Emulator = struct {
                 .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
                 .value = @intCast(u8, opcode & 0x00FF)
             }},
+            0xD000 => return OpCode{ .DrawSprite = .{
+                .x = @intCast(u8, (opcode & 0x0F00) >> 8),
+                .y = @intCast(u8, (opcode & 0x00F0) >> 4),
+                .height = @intCast(u8, opcode & 0x000F)
+            }},
             else => std.debug.warn("Unknown opcode = {x}\n", .{opcode}),
         }
         return null;
@@ -70,11 +85,41 @@ pub const Emulator = struct {
 
     fn execute_opcode(self: *Emulator, opcode: OpCode) void {
         switch(opcode) {
-            OpCodeName.SetIndex => |value| self.index_register = value,
-            OpCodeName.SetRegister => |value| self.registers[value.register_name] = value.value,
+            OpCodeName.SetIndex => |value| {
+                self.index_register = value;
+            },
+            OpCodeName.SetRegister => |value| {
+                self.registers[value.register_name] = value.value;
+            },
+            OpCodeName.DrawSprite => |value| {
+                self.draw_sprite(self.registers[value.x], self.registers[value.y], value.height);
+            },
             OpCodeName.Nop => {},
             OpCodeName.Count => unreachable,
         }
+    }
+
+    fn draw_sprite(self: *Emulator, x: Register, y: Register, height: u8) void {
+        // VF is special register used for collision detection
+        self.registers[0xF] = 0;
+        var yline: u8 = 0;
+        while (yline < height) : (yline += 1) {
+            const pixel = self.memory[self.index_register + yline];
+            var xline: u8 = 0;
+            while (xline < 8) : (xline += 1) {
+                const sprite_pixel = pixel & (@intCast(u8, 0x80) >> @intCast(u3, xline));
+                if (sprite_pixel != 0) {
+                    const screen_pixel: *bool = &self.gfx[@intCast(u16, x + xline) + (@intCast(u16, (y + yline)) * 64)];
+                    if (screen_pixel.*) {
+                        // Collision
+                        self.registers[0xF] = 1;
+                    }
+                    screen_pixel.* = (@boolToInt(screen_pixel.*) ^ 1) != 0;
+                }
+            }
+        }
+
+        self.draw_flag = true;
     }
 
     pub fn emulate_cycle(self: *Emulator) void {
@@ -92,4 +137,23 @@ pub const Emulator = struct {
             self.sound_timer -= 1;
         }
     }
+};
+
+const chip8_fontset = [_]u8 {
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+    0xF0, 0x80, 0xF0, 0x80, 0x80  // F
 };
