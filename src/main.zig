@@ -7,7 +7,7 @@ const sdl = @cImport({
 pub fn main() anyerror!void {
     const allocator = std.heap.c_allocator;
     var emulator = Emulator.initialize();
-    try emulator.load_program("Pong.ch8", allocator);
+    try emulator.load_program("tetris.ch8", allocator);
 
     if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) != 0) {
         std.debug.print("SD_Init Error: {}\n", .{sdl.SDL_GetError()});
