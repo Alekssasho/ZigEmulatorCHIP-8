@@ -11,13 +11,14 @@ pub const Emulator = struct {
     registers: [16]Register,
     index_register: u16,
     program_counter: u16,
-    gfx: [64 * 32]bool,
+    gfx: [64 * 32]u1,
     delay_timer: u8,
     sound_timer: u8,
     stack: [16]u16,
     stack_pointer: u16,
     keys: [16]bool,
     draw_flag: bool,
+    rng: std.rand.DefaultPrng,
 
     pub fn initialize() Emulator {
         var result = Emulator {
@@ -25,13 +26,14 @@ pub const Emulator = struct {
             .registers = [_]Register{0} ** 16,
             .index_register = 0,
             .program_counter = ProgramStartLocation,
-            .gfx = [_]bool{false} ** (64 * 32),
+            .gfx = [_]u1{0} ** (64 * 32),
             .delay_timer = 0,
             .sound_timer = 0,
             .stack = [_]u16{0} ** 16,
             .stack_pointer = 0,
             .keys = [_]bool{false} ** 16,
             .draw_flag = false,
+            .rng = std.rand.DefaultPrng.init(0xDEADBEEF)
         };
 
         // Load the fontset
@@ -75,6 +77,7 @@ pub const Emulator = struct {
                     else => std.debug.warn("Unknown opcode = {x}\n", .{opcode}),
                 }
             },
+            0x1000 => return OpCode{ .Jump = opcode & 0x0FFF },
             0xA000 => return OpCode{ .SetIndex = opcode & 0x0FFF },
             0x6000 => return OpCode{ .SetRegister = .{
                 .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
@@ -101,6 +104,18 @@ pub const Emulator = struct {
             0x2000 => {
                 return OpCode{ .CallFunction = opcode & 0x0FFF };
             },
+            0x3000 => return OpCode{ .Equal = .{
+                .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
+                .value = @intCast(u8, opcode & 0x00FF)
+            }},
+            0x4000 => return OpCode{ .Equal = .{
+                .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
+                .value = @intCast(u8, opcode & 0x00FF)
+            }},
+            0xC000 => return OpCode{ .Random = .{
+                .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
+                .bitwise_and_value = @intCast(u8, opcode & 0x00FF)
+            }},
             0xF000 => {
                 const second_byte: u8 = @intCast(u8, (opcode & 0x0F00) >> 8);
                 switch (opcode & 0x00FF) {
@@ -137,6 +152,9 @@ pub const Emulator = struct {
             OpCodeName.DrawSprite => |value| {
                 self.draw_sprite(self.registers[value.x], self.registers[value.y], value.height);
             },
+            OpCodeName.Jump => |address| {
+                self.program_counter = address;
+            },
             OpCodeName.CallFunction => |address| {
                 self.stack[self.stack_pointer] = self.program_counter;
                 self.stack_pointer += 1;
@@ -162,6 +180,19 @@ pub const Emulator = struct {
                     self.registers[i] = self.memory[self.index_register + i];
                 }
             },
+            OpCodeName.Equal => |value| {
+                if (self.registers[value.register_name] == value.value) {
+                    self.program_counter += 2;
+                }
+            },
+            OpCodeName.NotEqual => |value| {
+                if (self.registers[value.register_name] != value.value) {
+                    self.program_counter += 2;
+                }
+            },
+            OpCodeName.Random => |value| {
+                self.registers[value.register_name] = self.rng.random.int(u8) & value.bitwise_and_value;
+            },
             OpCodeName.Nop => {},
             OpCodeName.Count => unreachable,
         }
@@ -177,12 +208,12 @@ pub const Emulator = struct {
             while (xline < 8) : (xline += 1) {
                 const sprite_pixel = pixel & (@intCast(u8, 0x80) >> @intCast(u3, xline));
                 if (sprite_pixel != 0) {
-                    const screen_pixel: *bool = &self.gfx[@intCast(u16, x + xline) + (@intCast(u16, (y + yline)) * 64)];
-                    if (screen_pixel.*) {
+                    const screen_pixel: *u1 = &self.gfx[@intCast(u16, x + xline) + (@intCast(u16, (y + yline)) * 64)];
+                    if (screen_pixel.* != 0) {
                         // Collision
                         self.registers[0xF] = 1;
                     }
-                    screen_pixel.* = (@boolToInt(screen_pixel.*) ^ 1) != 0;
+                    screen_pixel.* ^= 1;
                 }
             }
         }

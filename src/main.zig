@@ -29,7 +29,14 @@ pub fn main() anyerror!void {
     }
     defer sdl.SDL_DestroyRenderer(renderer);
 
+    var texture = sdl.SDL_CreateTexture(renderer, sdl.SDL_PIXELFORMAT_RGBA8888, sdl.SDL_TEXTUREACCESS_STREAMING, 64, 32);
+    defer sdl.SDL_DestroyTexture(texture);
+
+    const CYCLE_TIME_NS = 16 * 1000;
+
+    var timer = try std.time.Timer.start();
     main_loop: while (true) {
+        timer.reset();
         var event: sdl.SDL_Event = undefined;
         while(sdl.SDL_PollEvent(&event) != 0) {
             switch(event.type) {
@@ -39,9 +46,27 @@ pub fn main() anyerror!void {
         }
 
         emulator.emulate_cycle();
+        if (emulator.draw_flag) {
+            var pixels = [_]u32{0x000000FF} ** (64 * 32);
+            for (emulator.gfx) | value, i| {
+                if (value != 0) {
+                    pixels[i] = 0xFFFFFFFF;
+                }
+            }
 
-        _ = sdl.SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
+            _ = sdl.SDL_UpdateTexture(texture, null, &pixels, @sizeOf(u32) * 64);
+
+            emulator.draw_flag = false;
+        }
+        _ = sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         _ = sdl.SDL_RenderClear(renderer);
+
+        _ = sdl.SDL_RenderCopy(renderer, texture, null, null);
         sdl.SDL_RenderPresent(renderer);
+
+        const time_took = timer.read();
+        if (time_took < CYCLE_TIME_NS) {
+            std.time.sleep(CYCLE_TIME_NS - time_took);
+        }
     }
 }
