@@ -4,6 +4,28 @@ const sdl = @cImport({
     @cInclude("SDL.h");
 });
 
+const key_mapping = [_] struct {
+    sdl_key: u32,
+    chip8_key: u8
+} {
+    .{.sdl_key = sdl.SDLK_1, .chip8_key = 0x1},
+    .{.sdl_key = sdl.SDLK_2, .chip8_key = 0x2},
+    .{.sdl_key = sdl.SDLK_3, .chip8_key = 0x3},
+    .{.sdl_key = sdl.SDLK_4, .chip8_key = 0xC},
+    .{.sdl_key = sdl.SDLK_q, .chip8_key = 0x4},
+    .{.sdl_key = sdl.SDLK_w, .chip8_key = 0x5},
+    .{.sdl_key = sdl.SDLK_e, .chip8_key = 0x6},
+    .{.sdl_key = sdl.SDLK_r, .chip8_key = 0xD},
+    .{.sdl_key = sdl.SDLK_a, .chip8_key = 0x7},
+    .{.sdl_key = sdl.SDLK_s, .chip8_key = 0x8},
+    .{.sdl_key = sdl.SDLK_d, .chip8_key = 0x9},
+    .{.sdl_key = sdl.SDLK_f, .chip8_key = 0xE},
+    .{.sdl_key = sdl.SDLK_z, .chip8_key = 0xA},
+    .{.sdl_key = sdl.SDLK_x, .chip8_key = 0x0},
+    .{.sdl_key = sdl.SDLK_c, .chip8_key = 0xB},
+    .{.sdl_key = sdl.SDLK_v, .chip8_key = 0xF},
+};
+
 pub fn main() anyerror!void {
     const allocator = std.heap.c_allocator;
     var emulator = Emulator.initialize();
@@ -41,6 +63,15 @@ pub fn main() anyerror!void {
         while(sdl.SDL_PollEvent(&event) != 0) {
             switch(event.type) {
                 sdl.SDL_QUIT => break :main_loop,
+                sdl.SDL_KEYDOWN, sdl.SDL_KEYUP => {
+                    const keycode = event.key.keysym.sym;
+                    for (key_mapping) |map| {
+                        if (map.sdl_key == keycode) {
+                            emulator.keys[map.chip8_key] = event.type == sdl.SDL_KEYDOWN;
+                            break;
+                        }
+                    }
+                },
                 else => {}
             }
         }

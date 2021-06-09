@@ -10,10 +10,15 @@ pub const OpCodeName = enum {
     LoadIntoRegisters,
     SetIndexToSprite,
     Add,
+    AddToIndex,
     Assign,
     Equal,
     NotEqual,
     Random,
+    IsKeyDown,
+    IsKeyUp,
+    GetDelay,
+    ClearScreen,
     Nop,
     Count
 };
@@ -34,6 +39,11 @@ pub const OpCode = union(OpCodeName) {
     Equal: struct { register_name: u8, value: u8 },
     NotEqual: struct { register_name: u8, value: u8 },
     Random: struct { register_name: u8, bitwise_and_value: u8 },
+    IsKeyDown: u8,
+    IsKeyUp: u8,
+    AddToIndex: u8,
+    GetDelay: u8,
+    ClearScreen: void,
     Nop: void,
     Count: void,
 };

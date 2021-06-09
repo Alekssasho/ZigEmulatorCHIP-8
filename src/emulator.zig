@@ -74,6 +74,7 @@ pub const Emulator = struct {
             0x0000 => {
                 switch (opcode & 0x00FF) {
                     0x00EE => return OpCode{ .Return = .{} },
+                    0x00E0 => return OpCode{ .ClearScreen = .{} },
                     else => std.debug.warn("Unknown opcode = {x}\n", .{opcode}),
                 }
             },
@@ -108,7 +109,7 @@ pub const Emulator = struct {
                 .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
                 .value = @intCast(u8, opcode & 0x00FF)
             }},
-            0x4000 => return OpCode{ .Equal = .{
+            0x4000 => return OpCode{ .NotEqual = .{
                 .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
                 .value = @intCast(u8, opcode & 0x00FF)
             }},
@@ -116,10 +117,20 @@ pub const Emulator = struct {
                 .register_name = @intCast(u8, (opcode & 0x0F00) >> 8),
                 .bitwise_and_value = @intCast(u8, opcode & 0x00FF)
             }},
+            0xE000 => {
+                const second_byte: u8 = @intCast(u8, (opcode & 0x0F00) >> 8);
+                switch (opcode & 0x00FF) {
+                    0x009E => return OpCode{ .IsKeyDown = second_byte },
+                    0x00A1 => return OpCode{ .IsKeyUp = second_byte },
+                    else => std.debug.warn("Unknown opcode = {x}\n", .{opcode}),
+                }
+            },
             0xF000 => {
                 const second_byte: u8 = @intCast(u8, (opcode & 0x0F00) >> 8);
                 switch (opcode & 0x00FF) {
+                    0x0007 => return OpCode{ .GetDelay = second_byte },
                     0x0015 => return OpCode{ .SetDelayTimer = second_byte },
+                    0x001E => return OpCode{ .AddToIndex = second_byte },
                     0x0033 => return OpCode{ .StoreBCD = second_byte },
                     0x0065 => return OpCode{ .LoadIntoRegisters = second_byte },
                     0x0029 => return OpCode{ .SetIndexToSprite = second_byte },
@@ -145,6 +156,9 @@ pub const Emulator = struct {
             },
             OpCodeName.Add => |value| {
                 self.registers[value.register_name] +%= value.value;
+            },
+            OpCodeName.AddToIndex => |register_name| {
+                self.index_register += self.registers[register_name];
             },
             OpCodeName.Assign => |value| {
                 self.registers[value.register_destination] = self.registers[value.register_source];
@@ -192,6 +206,24 @@ pub const Emulator = struct {
             },
             OpCodeName.Random => |value| {
                 self.registers[value.register_name] = self.rng.random.int(u8) & value.bitwise_and_value;
+            },
+            OpCodeName.IsKeyDown => |register_name| {
+                if (self.keys[self.registers[register_name]]) {
+                    self.program_counter += 2;
+                }
+            },
+            OpCodeName.IsKeyUp => |register_name| {
+                if (!self.keys[self.registers[register_name]]) {
+                    self.program_counter += 2;
+                }
+            },
+            OpCodeName.GetDelay => |register_name| {
+                self.registers[register_name] = self.delay_timer;
+            },
+            OpCodeName.ClearScreen => |_| {
+                for (self.gfx) |*value| {
+                    value.* = 0;
+                }
             },
             OpCodeName.Nop => {},
             OpCodeName.Count => unreachable,
